@@ -4,5 +4,13 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp8.0</TargetFramework>
   </PropertyGroup>
+  <ItemGroup>
+  <None Update="ConfigCLI.json">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+  </ItemGroup>
 
+  <Target Name="CreateCustomFolder" BeforeTargets="Build">
+      <MakeDir Directories="$(OutputPath)maps" />
+  </Target>
 </Project>
