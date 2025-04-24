@@ -9,6 +9,9 @@
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </None>
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ScottPlot" Version="4.1.28" />
+  </ItemGroup>
 
   <Target Name="CreateCustomFolder" BeforeTargets="Build">
       <MakeDir Directories="$(OutputPath)maps" />

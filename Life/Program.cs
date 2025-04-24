@@ -7,6 +7,8 @@ using System.Threading;
 using System.Text.Json;
 using System.IO;
 using System.Dynamic;
+using ScottPlot;
+
 
 namespace cli_life
 {
@@ -23,24 +25,33 @@ namespace cli_life
             else
                 IsAliveNext = liveNeighbors == 3;
         }
-        public void Advance()
+        public bool Advance()
         {
             IsAlive = IsAliveNext;
+            return IsAlive;
         }
     }
     public class Board
     {
         public readonly Cell[,] Cells;
         public readonly int CellSize;
+        public uint Epoch;
+        public uint cellAlive;
+        private uint lastNumberAlive;
+        public uint staticBoardSteps;
+        public double liveDensity;
 
         public int Columns { get { return Cells.GetLength(0); } }
         public int Rows { get { return Cells.GetLength(1); } }
         public int Width { get { return Columns * CellSize; } }
         public int Height { get { return Rows * CellSize; } }
 
-        public Board(int width, int height, int cellSize, double liveDensity)
+        public Board(int width, int height, int cellSize, double liveDensity, bool newBoard)
         {
             CellSize = cellSize;
+            Epoch = 0;
+            staticBoardSteps = 0;
+            this.liveDensity = liveDensity;
 
             Cells = new Cell[width / cellSize, height / cellSize];
             for (int x = 0; x < Columns; x++)
@@ -48,33 +59,34 @@ namespace cli_life
                     Cells[x, y] = new Cell();
 
             ConnectNeighbors();
-            Randomize(liveDensity);
+            if (newBoard)
+                Randomize();
         }
-
-        public Board(int width, int height, int cellSize)
-        {
-            CellSize = cellSize;
-
-            Cells = new Cell[width / cellSize, height / cellSize];
-            for (int x = 0; x < Columns; x++)
-                for (int y = 0; y < Rows; y++)
-                    Cells[x, y] = new Cell();
-
-            ConnectNeighbors();
-        }
-
         readonly Random rand = new Random();
-        public void Randomize(double liveDensity)
+        public void Randomize()
         {
             foreach (var cell in Cells)
                 cell.IsAlive = rand.NextDouble() < liveDensity;
         }
         public void Advance()
         {
+            cellAlive = 0;
             foreach (var cell in Cells)
                 cell.DetermineNextLiveState();
             foreach (var cell in Cells)
-                cell.Advance();
+                if (cell.Advance())
+                    cellAlive++;
+
+            if (cellAlive == lastNumberAlive)
+            {
+                staticBoardSteps++;
+            }
+            else
+            {
+                lastNumberAlive = cellAlive;
+                staticBoardSteps = 0;
+            }
+            Epoch++;
         }
         private void ConnectNeighbors()
         {
@@ -99,10 +111,10 @@ namespace cli_life
                 }
             }
         }
-        public (int, int) CountFigures()
+        public uint CountFigures()
         {
             bool[,] visited = new bool[Columns, Rows];
-            int countFigures = 0, countAlive = 0;
+            uint countFigures = 0;
 
             int[] dirX = { -1, 1, 0, 0, -1, 1, -1, 1 };
             int[] dirY = { 0, 0, -1, 1, -1, -1, 1, 1 };
@@ -117,7 +129,6 @@ namespace cli_life
                         Queue<(int, int)> queue = new Queue<(int, int)>();
                         queue.Enqueue((i, j));
                         visited[i, j] = true;
-                        countAlive++;
 
                         while (queue.Count > 0)
                         {
@@ -131,7 +142,6 @@ namespace cli_life
                                 if (Cells[nx, ny].IsAlive && !visited[nx, ny])
                                 {
                                     visited[nx, ny] = true;
-                                    countAlive++;
                                     queue.Enqueue((nx, ny));
                                 }
                             }
@@ -139,8 +149,15 @@ namespace cli_life
                     }
                 }
             }
-
-            return (countFigures, countAlive);
+            return countFigures;
+        }
+        public bool StaticBoard()
+        {
+            if (staticBoardSteps > 10)
+            {
+                return true;
+            }
+            else return false;
         }
     }
     class Index
@@ -160,16 +177,16 @@ namespace cli_life
             return (x, y);
         }
     }
+
     class LoaderMap
     {
         static private string CreateStr(Board board)
         {
             int columns = board.Width;
             int rows = board.Height;
-            int cellSize = board.CellSize;
 
             var strBuilder = new StringBuilder();
-            strBuilder.Append($"{columns}\n{rows}\n{cellSize}\n");
+            strBuilder.Append($"{columns}\n{rows}\n{board.CellSize}\n{board.liveDensity}\n");
 
             for (int row = 0; row < rows; row++)
             {
@@ -187,7 +204,6 @@ namespace cli_life
                 strBuilder.Append("\n");
             }
             return strBuilder.ToString();
-
         }
         static public void SaveMap(Board board, string nameFile)
         {
@@ -200,8 +216,9 @@ namespace cli_life
             int width = int.Parse(parts[0]);
             int height = int.Parse(parts[1]);
             int cellSize = int.Parse(parts[2]);
+            double liveDensity = double.Parse(parts[3]);
 
-            Board board = new Board(width, height, cellSize);
+            Board board = new Board(width, height, cellSize, liveDensity, false);
 
             int columns = width / cellSize;
             int rows = height / cellSize;
@@ -209,11 +226,16 @@ namespace cli_life
             {
                 for (int col = 0; col < columns; col++)
                 {
-                    board.Cells[col, row].IsAlive = parts[row + 3][col] == '*';
+                    board.Cells[col, row].IsAlive = parts[row + 4][col] == '*';
                 }
             }
 
             return board;
+        }
+        static public void SaveDataMap(Board board)
+        {
+            string newStr = $"{board.liveDensity} {board.Epoch}\n";
+            File.AppendAllText("data.txt", newStr);
         }
     }
 
@@ -225,6 +247,7 @@ namespace cli_life
         public double LiveDensity { get; set; }
         public int TimeSleep { get; set; }
     }
+
     class TemplateCounter
     {
         static private SortedDictionary<int, string> namesTemplates = new SortedDictionary<int, string>
@@ -233,16 +256,16 @@ namespace cli_life
             {5187, "Template two"},
             {1001, "Template three"},
             {88179, "Template four"},
-            {25935, "Template five"}
+            {25935, "Template five"},
+            {462, "Template six"}
         };
         static private int sizeTemplate = 5;
-        static private int[,] tamplateOne = { { 0, 1, 1 }, { 1, 0, 1 }, { 1, 1, 0 } };
-        static private int[,] tamplateTwo = { { 0, 1, 0 }, { 1, 0, 1 }, { 0, 1, 0 } };
-        static private int[,] tamplateThree = { { 0, 0, 0 }, { 1, 1, 1 }, { 0, 0, 0 } };
-        static private int[,] tamplateFour = { { 0, 1, 0 }, { 1, 0, 1 }, { 1, 1, 0 } };
-        static private int[,] tamplateFive = { { 0, 1, 1 }, { 1, 0, 1 }, { 0, 1, 0 } };
+        //  Шаблоны фигур
+        /*  { 0, 1, 1 }     { 0, 1, 0 }     { 0, 0, 0 }     { 0, 1, 0 }     { 0, 1, 1 }     { 1, 1, 0 }
+            { 1, 0, 1 }     { 1, 0, 1 }     { 1, 1, 1 }     { 1, 0, 1 }     { 1, 0, 1 }     { 1, 1, 0 }
+            { 1, 1, 0 }     { 0, 1, 0 }     { 0, 0, 0 }     { 1, 1, 0 }     { 0, 1, 0 }     { 0, 0, 0 }
+         */
         static private int[,] hashMatrix = { { 27, 27, 27, 27, 27 }, { 27, 2, 3, 5, 27 }, { 27, 7, 11, 13, 27 }, { 27, 17, 19, 23, 27 }, { 27, 27, 27, 27, 27 } };
-
         static private int CountHashSubBoard(Board board, int startCol, int startRow)
         {
             int hash = 1;
@@ -257,7 +280,7 @@ namespace cli_life
 
                     if (board.Cells[col, row].IsAlive)
                     {
-                        int m = hashMatrix[j, i];
+                        int m = hashMatrix[i, j];
                         if (m == 27)
                         {
                             return -1;
@@ -269,7 +292,10 @@ namespace cli_life
             }
             return hash;
         }
-
+        /**
+        * Проверка заключается в вычислении хэша подматриц основного полся, использую матрицу простых чисел.
+        * Вычисленный хэш используется для проверки на совпадения с сохранёнными хэшами шаблонов
+        */
         static public Dictionary<string, int> CountTemplates(Board board)
         {
             Dictionary<string, int> numberTemplates = new Dictionary<string, int>();
@@ -291,22 +317,49 @@ namespace cli_life
         }
     }
 
+    class PainterGraph
+    {
+        static public void CreateGraph()
+        {
+            var lines = File.ReadAllLines("data.txt")
+                .Select(line => line.Split(' '))
+                .Select(parts => new { X = double.Parse(parts[0]), Y = double.Parse(parts[1]) })
+                .OrderBy(point => point.X)  // Сортировка по X
+                .ToList();
+
+            double[] xs = lines.Select(p => p.X).ToArray();
+            double[] ys = lines.Select(p => p.Y).ToArray();
+
+            var plt = new Plot(800, 600);
+            plt.AddScatter(xs, ys);
+
+            plt.Title("График перехода в стабильное состояние (числа поколений) от попыток случайного распределения с разной плотностью заполнения поля");
+            plt.XLabel("Плотнсоть заполнения");
+            plt.YLabel("Число покоений");
+            plt.Legend();
+
+            plt.SaveFig("plot.png");
+        }
+    }
+
     class Program
     {
         static Board board;
+        static ConfigData config;
         static string configFile = "ConfigCLI.json";
-        static private ConfigData GetConfig()
+        static private void GetConfig()
         {
             string json = File.ReadAllText(configFile);
-            return JsonSerializer.Deserialize<ConfigData>(json);
+            config = JsonSerializer.Deserialize<ConfigData>(json);
         }
-        static private void Reset(ConfigData dataConfig)
+        static private void Reset()
         {
             board = new Board(
-                width: dataConfig.Width,
-                height: dataConfig.Height,
-                cellSize: dataConfig.CellSize,
-                liveDensity: dataConfig.LiveDensity);
+                width: config.Width,
+                height: config.Height,
+                cellSize: config.CellSize,
+                liveDensity: config.LiveDensity,
+                newBoard: true);
         }
         static private void Set()
         {
@@ -320,15 +373,69 @@ namespace cli_life
             string fileName = Console.ReadLine();
             LoaderMap.SaveMap(board, fileName);
         }
+        static bool KeyControl(bool pauseStatus)
+        {
+            if (Console.KeyAvailable)
+            {
+                var key = Console.ReadKey(true).Key;
+                if (pauseStatus && key == ConsoleKey.S)
+                {
+                    Save();
+                }
+                if (pauseStatus && key == ConsoleKey.D)
+                {
+                    Set();
+                    RenderMap();
+                    RenderStats();
+                }
+                if (pauseStatus && key == ConsoleKey.A)
+                {
+                    LoaderMap.SaveDataMap(board);
+                }
+                if (pauseStatus && key == ConsoleKey.Escape)
+                {
+                    Reset();
+                    RenderMap();
+                    RenderStats();
+                }
+                if (pauseStatus && key == ConsoleKey.P)
+                {
+                    PainterGraph.CreateGraph();
+                }
+                if (key == ConsoleKey.Q)
+                {
+                    return pauseStatus ? false : true;
+                }
+            }
+            return pauseStatus;
+        }
+        static bool StepEpoch(bool pauseStatus)
+        {
+            if (!pauseStatus)
+            {
+                Console.Clear();
+                Console.WriteLine("Q - pause; A - save board stats; S - save board; D - load board; P - create picture graphic\n");
 
+                board.Advance();
+                RenderMap();
+                RenderStats();
+
+                if (board.StaticBoard())
+                {
+                    pauseStatus = true;
+                    Console.WriteLine("Static board.\n");
+                }
+
+                Thread.Sleep(config.TimeSleep);
+            }
+            return pauseStatus;
+        }
         static void RenderStats()
         {
             var strBuilder = new StringBuilder();
 
-            (int countFigure, int countAlive) = board.CountFigures();
-            strBuilder.Append($"Count figures: {countFigure} ");
-            strBuilder.Append($"Count alive: {countAlive}\n");
-            strBuilder.AppendLine();
+            strBuilder.Append($"Count figures: {board.CountFigures()} ");
+            strBuilder.Append($"Count alive: {board.cellAlive}\n");
 
             Dictionary<string, int> countTemplate = TemplateCounter.CountTemplates(board);
             foreach (var (name, count) in countTemplate)
@@ -336,6 +443,8 @@ namespace cli_life
                 strBuilder.Append($"Count {name}: {count} ");
             }
             strBuilder.AppendLine();
+            strBuilder.Append($"Epoch: {board.Epoch}\n");
+
             Console.Write(strBuilder.ToString());
         }
         static void RenderMap()
@@ -358,43 +467,21 @@ namespace cli_life
                 }
                 strBuilder.AppendLine();
             }
-            Console.Clear();
             Console.Write(strBuilder.ToString());
         }
         static void Main(string[] args)
         {
-            var dataConfig = GetConfig();
-            Reset(dataConfig);
+            GetConfig();
+            Reset();
+
+            Console.WriteLine("Press Q for unpause.");
 
             bool pauseStatus = true;
             while (true)
             {
-                Thread.Sleep(50);
-                if (Console.KeyAvailable)
-                {
-                    var key = Console.ReadKey(true).Key;
-                    if (key == ConsoleKey.Q)
-                    {
-                        pauseStatus = pauseStatus ? false : true;
-                    }
-                    if (pauseStatus && key == ConsoleKey.S)
-                    {
-                        Save();
-                    }
-                    if (pauseStatus && key == ConsoleKey.D)
-                    {
-                        Set();
-                        RenderMap();
-                        RenderStats();
-                    }
-                }
-                if (!pauseStatus)
-                {
-                    board.Advance();
-                    RenderMap();
-                    RenderStats();
-                    Thread.Sleep(dataConfig.TimeSleep);
-                }
+                Thread.Sleep(30);
+                pauseStatus = KeyControl(pauseStatus);
+                pauseStatus = StepEpoch(pauseStatus);
             }
         }
     }
