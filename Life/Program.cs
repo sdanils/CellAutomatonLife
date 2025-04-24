@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.Text.Json;
 using System.IO;
+using System.Dynamic;
 
 namespace cli_life
 {
@@ -98,6 +99,66 @@ namespace cli_life
                 }
             }
         }
+        public (int, int) CountFigures()
+        {
+            bool[,] visited = new bool[Columns, Rows];
+            int countFigures = 0, countAlive = 0;
+
+            int[] dirX = { -1, 1, 0, 0, -1, 1, -1, 1 };
+            int[] dirY = { 0, 0, -1, 1, -1, -1, 1, 1 };
+
+            for (int i = 0; i < Columns; i++)
+            {
+                for (int j = 0; j < Rows; j++)
+                {
+                    if (Cells[i, j].IsAlive && !visited[i, j])
+                    {
+                        countFigures++;
+                        Queue<(int, int)> queue = new Queue<(int, int)>();
+                        queue.Enqueue((i, j));
+                        visited[i, j] = true;
+                        countAlive++;
+
+                        while (queue.Count > 0)
+                        {
+                            var (x, y) = queue.Dequeue();
+
+                            for (int k = 0; k < 8; k++)
+                            {
+                                int nx = x + dirX[k], ny = y + dirY[k];
+                                (nx, ny) = Index.ChechIndex(nx, ny, Columns, Rows);
+
+                                if (Cells[nx, ny].IsAlive && !visited[nx, ny])
+                                {
+                                    visited[nx, ny] = true;
+                                    countAlive++;
+                                    queue.Enqueue((nx, ny));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return (countFigures, countAlive);
+        }
+    }
+    class Index
+    {
+        static public (int, int) ChechIndex(int x, int y, int xMax, int yMax)
+        {
+            if (x >= xMax)
+                x = x % xMax;
+            else if (x < 0)
+                x = xMax + x % xMax;
+
+            if (y >= yMax)
+                y = y % yMax;
+            else if (y < 0)
+                y = yMax + y % yMax;
+
+            return (x, y);
+        }
     }
     class LoaderMap
     {
@@ -164,6 +225,71 @@ namespace cli_life
         public double LiveDensity { get; set; }
         public int TimeSleep { get; set; }
     }
+    class TemplateCounter
+    {
+        static private SortedDictionary<int, string> namesTemplates = new SortedDictionary<int, string>
+        {
+            {440895, "Template one"},
+            {5187, "Template two"},
+            {1001, "Template three"},
+            {88179, "Template four"},
+            {25935, "Template five"}
+        };
+        static private int sizeTemplate = 5;
+        static private int[,] tamplateOne = { { 0, 1, 1 }, { 1, 0, 1 }, { 1, 1, 0 } };
+        static private int[,] tamplateTwo = { { 0, 1, 0 }, { 1, 0, 1 }, { 0, 1, 0 } };
+        static private int[,] tamplateThree = { { 0, 0, 0 }, { 1, 1, 1 }, { 0, 0, 0 } };
+        static private int[,] tamplateFour = { { 0, 1, 0 }, { 1, 0, 1 }, { 1, 1, 0 } };
+        static private int[,] tamplateFive = { { 0, 1, 1 }, { 1, 0, 1 }, { 0, 1, 0 } };
+        static private int[,] hashMatrix = { { 27, 27, 27, 27, 27 }, { 27, 2, 3, 5, 27 }, { 27, 7, 11, 13, 27 }, { 27, 17, 19, 23, 27 }, { 27, 27, 27, 27, 27 } };
+
+        static private int CountHashSubBoard(Board board, int startCol, int startRow)
+        {
+            int hash = 1;
+            for (int i = 0; i < sizeTemplate; i++)
+            {
+                for (int j = 0; j < sizeTemplate; j++)
+                {
+                    int col = startCol + j, row = startRow + i;
+                    int maxCol = board.Columns, maxRow = board.Rows;
+
+                    (col, row) = Index.ChechIndex(col, row, maxCol, maxRow);
+
+                    if (board.Cells[col, row].IsAlive)
+                    {
+                        int m = hashMatrix[j, i];
+                        if (m == 27)
+                        {
+                            return -1;
+                        }
+
+                        hash *= m;
+                    }
+                }
+            }
+            return hash;
+        }
+
+        static public Dictionary<string, int> CountTemplates(Board board)
+        {
+            Dictionary<string, int> numberTemplates = new Dictionary<string, int>();
+            foreach (string val in namesTemplates.Values)
+                numberTemplates.Add(val, 0);
+
+            for (int j = 0; j < board.Rows; j++)
+            {
+                for (int i = 0; i < board.Columns; i++)
+                {
+                    int hashSubMatrix = CountHashSubBoard(board, i, j);
+                    if (namesTemplates.ContainsKey(hashSubMatrix))
+                    {
+                        numberTemplates[namesTemplates[hashSubMatrix]]++;
+                    }
+                }
+            }
+            return numberTemplates;
+        }
+    }
 
     class Program
     {
@@ -195,7 +321,24 @@ namespace cli_life
             LoaderMap.SaveMap(board, fileName);
         }
 
-        static void Render()
+        static void RenderStats()
+        {
+            var strBuilder = new StringBuilder();
+
+            (int countFigure, int countAlive) = board.CountFigures();
+            strBuilder.Append($"Count figures: {countFigure} ");
+            strBuilder.Append($"Count alive: {countAlive}\n");
+            strBuilder.AppendLine();
+
+            Dictionary<string, int> countTemplate = TemplateCounter.CountTemplates(board);
+            foreach (var (name, count) in countTemplate)
+            {
+                strBuilder.Append($"Count {name}: {count} ");
+            }
+            strBuilder.AppendLine();
+            Console.Write(strBuilder.ToString());
+        }
+        static void RenderMap()
         {
             var strBuilder = new StringBuilder();
 
@@ -215,7 +358,6 @@ namespace cli_life
                 }
                 strBuilder.AppendLine();
             }
-
             Console.Clear();
             Console.Write(strBuilder.ToString());
         }
@@ -227,9 +369,7 @@ namespace cli_life
             bool pauseStatus = true;
             while (true)
             {
-                Render();
-                Thread.Sleep(20);
-
+                Thread.Sleep(50);
                 if (Console.KeyAvailable)
                 {
                     var key = Console.ReadKey(true).Key;
@@ -244,15 +384,19 @@ namespace cli_life
                     if (pauseStatus && key == ConsoleKey.D)
                     {
                         Set();
-                        Render();
+                        RenderMap();
+                        RenderStats();
                     }
                 }
                 if (!pauseStatus)
                 {
-                    Thread.Sleep(dataConfig.TimeSleep);
                     board.Advance();
+                    RenderMap();
+                    RenderStats();
+                    Thread.Sleep(dataConfig.TimeSleep);
                 }
             }
         }
     }
 }
+
