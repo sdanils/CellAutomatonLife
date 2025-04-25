@@ -2,11 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Threading;
 using System.Text.Json;
 using System.IO;
-using System.Dynamic;
 using ScottPlot;
 
 
@@ -17,6 +15,7 @@ namespace cli_life
         public bool IsAlive;
         public readonly List<Cell> neighbors = new List<Cell>();
         private bool IsAliveNext;
+
         public void DetermineNextLiveState()
         {
             int liveNeighbors = neighbors.Where(x => x.IsAlive).Count();
@@ -50,6 +49,7 @@ namespace cli_life
         {
             CellSize = cellSize;
             Epoch = 0;
+            cellAlive = 0;
             staticBoardSteps = 0;
             this.liveDensity = liveDensity;
 
@@ -66,16 +66,24 @@ namespace cli_life
         public void Randomize()
         {
             foreach (var cell in Cells)
+            {
                 cell.IsAlive = rand.NextDouble() < liveDensity;
+                if (cell.IsAlive)
+                    cellAlive++;
+            }
         }
+
         public void Advance()
         {
             cellAlive = 0;
             foreach (var cell in Cells)
                 cell.DetermineNextLiveState();
             foreach (var cell in Cells)
-                if (cell.Advance())
+            {
+                cell.Advance();
+                if (cell.IsAlive)
                     cellAlive++;
+            }
 
             if (cellAlive == lastNumberAlive)
             {
@@ -87,6 +95,16 @@ namespace cli_life
                 staticBoardSteps = 0;
             }
             Epoch++;
+        }
+        public void SetMap(string[] partsMap)
+        {
+            for (int row = 0; row < Rows; row++)
+                for (int col = 0; col < Columns; col++)
+                    if (partsMap[row][col] == '*')
+                    {
+                        Cells[col, row].IsAlive = true;
+                        cellAlive++;
+                    }
         }
         private void ConnectNeighbors()
         {
@@ -137,7 +155,7 @@ namespace cli_life
                             for (int k = 0; k < 8; k++)
                             {
                                 int nx = x + dirX[k], ny = y + dirY[k];
-                                (nx, ny) = Index.ChechIndex(nx, ny, Columns, Rows);
+                                (nx, ny) = Index.ChekIndex(nx, ny, Columns, Rows);
 
                                 if (Cells[nx, ny].IsAlive && !visited[nx, ny])
                                 {
@@ -162,7 +180,7 @@ namespace cli_life
     }
     class Index
     {
-        static public (int, int) ChechIndex(int x, int y, int xMax, int yMax)
+        static public (int, int) ChekIndex(int x, int y, int xMax, int yMax)
         {
             if (x >= xMax)
                 x = x % xMax;
@@ -178,7 +196,7 @@ namespace cli_life
         }
     }
 
-    class LoaderMap
+    public class LoaderMap
     {
         static private string CreateStr(Board board)
         {
@@ -219,16 +237,7 @@ namespace cli_life
             double liveDensity = double.Parse(parts[3]);
 
             Board board = new Board(width, height, cellSize, liveDensity, false);
-
-            int columns = width / cellSize;
-            int rows = height / cellSize;
-            for (int row = 0; row < rows; row++)
-            {
-                for (int col = 0; col < columns; col++)
-                {
-                    board.Cells[col, row].IsAlive = parts[row + 4][col] == '*';
-                }
-            }
+            board.SetMap(parts[4..]);
 
             return board;
         }
@@ -248,7 +257,7 @@ namespace cli_life
         public int TimeSleep { get; set; }
     }
 
-    class TemplateCounter
+    public class TemplateCounter
     {
         static private SortedDictionary<int, string> namesTemplates = new SortedDictionary<int, string>
         {
@@ -276,15 +285,13 @@ namespace cli_life
                     int col = startCol + j, row = startRow + i;
                     int maxCol = board.Columns, maxRow = board.Rows;
 
-                    (col, row) = Index.ChechIndex(col, row, maxCol, maxRow);
+                    (col, row) = Index.ChekIndex(col, row, maxCol, maxRow);
 
                     if (board.Cells[col, row].IsAlive)
                     {
                         int m = hashMatrix[i, j];
                         if (m == 27)
-                        {
                             return -1;
-                        }
 
                         hash *= m;
                     }
@@ -293,7 +300,7 @@ namespace cli_life
             return hash;
         }
         /**
-        * Проверка заключается в вычислении хэша подматриц основного полся, использую матрицу простых чисел.
+        * Проверка заключается в вычислении хэша подматриц основного поля, использую матрицу простых чисел.
         * Вычисленный хэш используется для проверки на совпадения с сохранёнными хэшами шаблонов
         */
         static public Dictionary<string, int> CountTemplates(Board board)
@@ -308,9 +315,8 @@ namespace cli_life
                 {
                     int hashSubMatrix = CountHashSubBoard(board, i, j);
                     if (namesTemplates.ContainsKey(hashSubMatrix))
-                    {
                         numberTemplates[namesTemplates[hashSubMatrix]]++;
-                    }
+
                 }
             }
             return numberTemplates;
@@ -347,12 +353,13 @@ namespace cli_life
         static Board board;
         static ConfigData config;
         static string configFile = "ConfigCLI.json";
-        static private void GetConfig()
+        static public ConfigData GetConfig()
         {
             string json = File.ReadAllText(configFile);
             config = JsonSerializer.Deserialize<ConfigData>(json);
+            return config;
         }
-        static private void Reset()
+        static public Board Reset()
         {
             board = new Board(
                 width: config.Width,
@@ -360,6 +367,8 @@ namespace cli_life
                 cellSize: config.CellSize,
                 liveDensity: config.LiveDensity,
                 newBoard: true);
+
+            return board;
         }
         static private void Set()
         {
